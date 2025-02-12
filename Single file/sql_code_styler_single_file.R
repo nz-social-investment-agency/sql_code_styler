@@ -1,19 +1,29 @@
 ################################################################################
-# SQL code styling tool
-# reference data
-#
-# Author: Daniel Contractor
-# Updated: Simon Anastasiadis
-################################################################################
-# We use consistent input names:
-# - sql_code is a single character string containing all lines of the file.
-# - sql_content is a list containing sql_code and all the extracted/protected
-#   components.
-# 
-# Uses code folding: Alt+O to collapse all.
+#' SQL code styling tool
+#' reference data
+#' 
+#' Author: Daniel Contractor
+#' Updated: Simon Anastasiadis
+#' 
+#' 
+#' Key info
+#' - This file is designed to run the entire styling tool with minimal setup
+#'   and minimal change to your R environment.
+#' - Within RStudio, this file uses code folding. Press Alt+O to collapse down
+#'   to headers for ease of review.
+#' 
+#' 
+#' Run instructions:
+#' 1. Open this file in R and "Source" it. Keyboard short cut Ctrl + Shift + S
+#' 2. Select file or folder mode
+#' 3. Select the file / folder you want styled
+#' 4. Select where you want the output saved
+#' 5. Wait for the tool to run
+#' 6. Review the styled files once the tool completes
+#'  
 ################################################################################
 
-## install required packages ---------------------------------------------- ----
+## Install required packages ---------------------------------------------- ----
 
 req_packages = c("stringr", "dplyr", "rstudioapi")
 for(pkg in req_packages){
@@ -21,7 +31,216 @@ for(pkg in req_packages){
   install.packages(pkg)
 }
 
-## disassemble functions -------------------------------------------------- ----
+## Create reference data -------------------------------------------------- ----
+
+ref_data = list(
+  ## keyword list ----
+  keywords_list = c(
+    "SELECT",
+    "FROM",
+    "WHERE",
+    "INNER JOIN",
+    "OUTER JOIN",
+    "GROUP BY",
+    "ORDER BY",
+    "HAVING",
+    "AND",
+    "OR",
+    "BULK",
+    "UPDATE",
+    "DELETE",
+    "CREATE",
+    "ALTER",
+    "DROP",
+    "TRUNCATE",
+    "WITH"
+  ),
+  
+  ## new keywords ----
+  new_keywords = c(
+    "ADD CONSTRAINT",
+    "ANY",
+    "ASC",
+    "BACKUP DATABASE",
+    "BETWEEN",
+    "CHECK",
+    "CONSTRAINT",
+    "CREATE DATABASE",
+    "CREATE INDEX",
+    "CREATE OR REPLACE VIEW",
+    "CREATE TABLE",
+    "CREATE PROCEDURE",
+    "CREATE UNIQUE INDEX",
+    "CREATE VIEW",
+    "DATABASE",
+    "DEFAULT",
+    "DROP CONSTRAINT",
+    "DROP DATABASE",
+    "DROP DEFAULT",
+    "DROP INDEX",
+    "DROP VIEW",
+    "EXEC",
+    "FOREIGN KEY",
+    "FULL OUTER JOIN",
+    "GO",
+    "GROUP BY",
+    "HAVING",
+    "INSERT INTO",
+    "INSERT INTO SELECT",
+    "LEFT JOIN",
+    "LIMIT",
+    "PRIMARY KEY",
+    "PROCEDURE",
+    "RIGHT JOIN",
+    "ROWNUM",
+    "SELECT DISTINCT",
+    "SELECT INTO",
+    "SELECT TOP",
+    "SET",
+    "TOP",
+    "TRUNCATE TABLE",
+    "UNION",
+    "UNIQUE",
+    "VALUES",
+    "VIEW",
+    "ON",
+    "REBUILD",
+    "JOIN",
+    "INTO"
+  ),
+  
+  ## join keywords ----
+  join_keywords = c(
+    "JOIN",
+    "LEFT JOIN",
+    "RIGHT JOIN",
+    "INNER JOIN",
+    "OUTER JOIN",
+    "FULL JOIN",
+    "LEFT OUTER JOIN",
+    "RIGHT OUTER JOIN",
+    "CROSS JOIN",
+    "NATURAL JOIN"
+  ),
+  
+  ## sql functions ----
+  sql_functions = c(
+    "ABS",
+    "ASCII",
+    "AVG",
+    "CAST",
+    "CASE",
+    "CEIL",
+    "CEILING",
+    "CHAR",
+    "CHARINDEX",
+    "CONCAT",
+    "CONVERT",
+    "COUNT",
+    "CURRENT_TIMESTAMP",
+    "CURRENT_USER",
+    "CURDATE",
+    "DATEDIFF",
+    "DATENAME",
+    "DATEPART",
+    "DATEADD",
+    "DAY",
+    "DATALENGTH",
+    "DECIMAL",
+    "EXTRACT",
+    "FLOOR",
+    "GETDATE",
+    "GETUTCDATE",
+    "IF",
+    "ISDATE",
+    "ISNULL",
+    "ISNUMERIC",
+    "LAG",
+    "LEAD",
+    "LEFT",
+    "LEN",
+    "LOWER",
+    "LTRIM",
+    "MAX",
+    "MIN",
+    "MOD",
+    "MONTH",
+    "NCHAR",
+    "NOW",
+    "NULLIF",
+    "NUMERIC",
+    "OBJECT_ID",
+    "OVER",
+    "PATINDEX",
+    "POWER",
+    "RAND",
+    "REPLACE",
+    "RIGHT",
+    "ROUND",
+    "RTRIM",
+    "SESSION_USER",
+    "SESSIONPROPERTY",
+    "SIGN",
+    "SPACE",
+    "STR",
+    "STUFF",
+    "SUBSTRING",
+    "SUM",
+    "SYSTEM_USER",
+    "TRIM",
+    "TRY_CAST",
+    "TRY_CONVERT",
+    "TOP",
+    "UPPER",
+    "USER_NAME",
+    "YEAR",
+    "VARCHAR",
+    "NVARCHAR",
+    "DATEFROMPARTS",
+    "EOMONTH",
+    "in",
+    "IN",
+    "COALESCE",
+    "DATEADD",
+    "OVER",
+    "IIF",
+    "RANK",
+    "ROW_NUMBER"
+  ),
+  
+  ## capitalisation keywords ----
+  capitalisation_keywords = c(
+    "ALL",
+    "AS",
+    "BY",
+    "DESC",
+    "DISTINCT",
+    "ELSE",
+    "END",
+    "EXCEPT",
+    "EXISTS",
+    "FULL",
+    "GROUP",
+    "ILIKE",
+    "INNER",
+    "INSERT",
+    "INTERSECT",
+    "IS",
+    "LIKE",
+    "NOT",
+    "NULL",
+    "OFFSET",
+    "ORDER",
+    "OUTER",
+    "PARTITION",
+    "TABLE",
+    "THEN",
+    "WHEN"
+  )
+  
+)
+
+## Disassemble functions -------------------------------------------------- ----
 
 comment_disassemble = function(sql_code) {
   stopifnot(is.character(sql_code))
@@ -164,7 +383,7 @@ special_patterns_disassemble = function(sql_content){
   return(sql_content)
 }
 
-## reassemble functions --------------------------------------------------- ----
+## Reassemble functions --------------------------------------------------- ----
 
 reassemble_comments = function(sql_content) {
   stopifnot(is.list(sql_content))
@@ -253,7 +472,7 @@ reassemble_special_patterns = function(sql_content) {
   return(sql_content)
 }
 
-## other functions -------------------------------------------------------- ----
+## Other functions -------------------------------------------------------- ----
 
 drop_table_if_exists = function(sql_code) {
   stopifnot(is.character(sql_code))
@@ -446,7 +665,7 @@ calculate_indentation = function(sql_code) {
     correct_indent = strrep(" ", num_open_indentations * 4),
     re_indent = paste0(correct_indent, line)
   )
-
+  
   # print out data frame for debugging
   # write.csv(df, output_file.csv, row.names = FALSE)
   
@@ -491,7 +710,7 @@ insert_newlines_before_keywords_and_brackets = function(sql_content) {
   return(sql_content)
 }
 
-## core execution --------------------------------------------------------- ----
+## Core execution --------------------------------------------------------- ----
 
 style_files_interface = function() {
   
@@ -502,7 +721,7 @@ style_files_interface = function() {
     "Style a single file of a whole folder?",
     ok = "File",
     cancel = "Folder"
-    )
+  )
   selection_type = ifelse(selection_type, "File", "Folder")
   
   # get file
@@ -519,12 +738,12 @@ style_files_interface = function() {
     cat("No input selected. Exiting\n")
     return(NULL)
   }
-    
+  
   ## output directory ----
   output_directory = rstudioapi::selectDirectory(
     caption = "Select Directory to Save Styled and Unstyled Files",
     path = dirname(input_path)
-    )
+  )
   if(is.null(output_directory)){
     stop("No directory selected. Exiting.")
   }
@@ -534,7 +753,7 @@ style_files_interface = function() {
   
   if (!dir.exists(styled_folder)){ dir.create(styled_folder) }
   if (!dir.exists(unstyled_folder)){ dir.create(unstyled_folder) }
-
+  
   ## process file(s) ----
   
   # get contents of folder if in folder mode
@@ -605,3 +824,37 @@ process_sql_files = function(input_file, output_file){
   
   writeLines(sql_content, output_file)
 }
+
+## Execute ---------------------------------------------------------------- ----
+
+style_files_interface()
+
+## Tidy up ---------------------------------------------------------------- ----
+
+# remove all R objects created by script
+
+rm(list = c(
+  "blankline_disassemble",
+  "calculate_indentation",
+  "capitalize_known_titles",
+  "capitalize_sql_keywords",
+  "comment_disassemble",
+  "drop_table_if_exists",
+  "find_balanced_brackets",
+  "function_disassemble",
+  "insert_newlines_before_keywords_and_brackets",
+  "pkg",
+  "process_sql_files",
+  "reassemble_comments",
+  "reassemble_functions",
+  "reassemble_special_patterns",
+  "ref_data",
+  "remove_double_newlines",
+  "remove_whitespace",
+  "req_packages",
+  "restore_blank_lines",
+  "restore_whitespace",
+  "special_patterns_disassemble",
+  "standardize_sql",
+  "style_files_interface"
+))
