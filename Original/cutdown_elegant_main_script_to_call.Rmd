@@ -1,0 +1,32 @@
+---
+title: "MAIN_SCRIPT"
+author: "Daniel Contractor"
+date: "2024-12-08"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### LINES TO CALL @ MAIN FUNCTIONS:
+
+#      Styler function:
+
+```{r}
+source("cutdown_elegant_function_pairs.R")
+style_files_interface()
+```
+
+
+
+
+#     Function which deletes everthing after "UPDATE" or "ALTER TABLE":
+```{r}
+# source("elegant_function_pairs.R")
+# delete_files_interface()
+```
+
+
+
+

@@ -1,0 +1,295 @@
+---
+title: "Styler tool unit testing"
+author: "Daniel Contractor"
+date: "2025-01-15"
+output: html_document
+---
+
+##   **Unit Testing for Styler Tool**
+
+#    Author: Daniel Contractor
+
+#    Last updated:   15/01/2025
+
+#    Purpose: This file contains unit tests for each of the individual functions the 'styler_functions.R'.
+#    The goal of these tests is to demonstrate that each function performs as intended. 
+#    They therfore also provide a useful starting point for debugging.
+
+#    Order of Unit Tests:
+
+#   1. Test for blankline_disassemble
+#   2. Test for comment_disassemble
+#   3. Test for capitalize_sql_keywords
+#   4. Test for function_disassemble
+#   5. Test for special_patterns_disassemble
+#   6. Test for remove_whitespace
+#   7. Test for insert_newlines_before_keywords_and_brackets 
+#   8. Test for calculate_indentation
+#   9. Test for restore_whitespace
+#  10. Test for reassemble_special_patterns
+#  11. Test for find_balanced_brackets
+#  11. Test for reassemble_functions
+#  12. Test for reassemble_comments
+#  13. Test for remove_double_newlines
+#  14. Test for restore_blank_lines
+#  15. Test for standardize_sql
+#  16. Test for capitalize_known_titles
+#  17. Test for drop_table_if_exists
+
+
+
+## Unit Tests
+
+```{r}
+source("cutdown_elegant_function_pairs.R")
+```
+
+#Test for blankline_disassemble
+```{r}
+
+sql_code <- "SELECT * FROM table;\n\nINSERT INTO table VALUES (1,2);\n\n"
+expected_output <- "SELECT * FROM table;<><>b<><>\nINSERT INTO table VALUES (1,2);<><>b<><>\n"
+
+result <- blankline_disassemble(sql_code)
+stopifnot(result == expected_output)
+
+```
+
+#Test for comment_disassemble
+```{r}
+sql_code <- "SELECT * FROM table WHERE id = 1 -- This is a comment"
+
+expected_output <- list(
+  "SELECT * FROM table WHERE id = 1<><>c1<><>",
+  c1 = " -- This is a comment"
+)
+
+result <- comment_disassemble(sql_code)
+
+stopifnot (result[[1]] == expected_output[[1]] & result[['c1']] == expected_output[['c1']]) 
+
+```
+
+#Test for capitalize_sql_keywords
+```{r}
+sql_code <-list( "select col1, col2 from table where col3 = 5","(col1 + col2)")
+result <- capitalize_sql_keywords(sql_code)[[1]]
+expected <- "SELECT col1, col2 FROM TABLE WHERE col3 = 5"
+stopifnot (result == expected) 
+```
+
+#Test for find_balanced_brackets
+
+```{r}
+# Test input
+input_text <- "SELECT SUM(column1), AVG(column2), MAX(column3 + column4) FROM table WHERE COUNT(column5) > 10"
+
+# Expected result: balanced brackets for SQL functions in the text
+expected_result <- list(
+  "(column1)", 
+  "(column2)", 
+  "(column3 + column4)", 
+  "(column5)"
+)
+
+# Run the function
+result <- find_balanced_brackets(input_text)
+
+# Validate the result
+stopifnot(length(result) == length(expected_result))  # Ensure the number of matches is correct
+#stopifnot(all(result == expected_result))
+for (i in seq_along(expected_result)) {
+  stopifnot(result[[i]] == expected_result[[i]])  # Check each match individually
+}# Ensure all matches are as expected
+
+```
+
+#Test for function_disassemble
+```{r}
+# Test for function_disassemble
+sql_list <- list(
+  "SELECT ABS(a), CONCAT(b, c) FROM table"
+)
+
+expected_output <- list(
+  "SELECT ABS<><>f1<><>, CONCAT<><>f2<><> FROM table",
+  f1 = "(a)",
+  f2 = "(b, c)"
+)
+
+result <- function_disassemble(sql_list)
+
+stopifnot(result[[1]] == expected_output[[1]] & result[['f1']] == expected_output[['f1']] & result[['f2']] == expected_output[['f2']] ) 
+```
+
+
+#Test for special_patterns_disassemble
+```{r}
+
+sql_text <- list("SELECT * FROM table WHERE DATA_COMPRESSION ON; CREATE NONCLUSTERED INDEX idx ON table (col1); CASE WHEN col1 = 'A' THEN 1 ELSE 0 END","c1"="comment 1", "c2=comment 2")
+
+expected_output <- list("SELECT * FROM table WHERE DATA_COMPRESSION ON; {}{}y1{}{}; {}{}y2{}{}",
+                        "y1" = "\nCREATE NONCLUSTERED INDEX idx ON table (col1)", "y2" = "CASE WHEN col1 = 'A' THEN 1 ELSE 0 END")
+
+result <- special_patterns_disassemble(sql_text)
+stopifnot(result[[1]] == expected_output[[1]])
+stopifnot(result[[2]] == expected_output[[2]])
+```
+
+
+#Test for remove_whitespace
+```{r}
+sql_content <- c("  SELECT  *  \tFROM   table  WHERE  column1  =  value1  ", "Some comment")
+expected_result <- c("SELECT * FROM table WHERE column1=value1", "Some comment")
+
+result <- remove_whitespace(sql_content)
+stopifnot (result[[1]] == expected_result[[1]] && result[[2]] == expected_result[[2]])
+```
+
+#Test for insert_newlines_before_keywords_and_brackets
+```{r}
+# Test for insert_newlines_before_keywords_and_brackets
+sql_code <- list("SELECT * FROM table WHERE column1 = value1", "Some comment")
+keywords_list <- c("SELECT", "FROM", "WHERE")
+expected_result <- c("\nSELECT * \nFROM table \nWHERE column1 = value1", "Some comment")
+
+result <- insert_newlines_before_keywords_and_brackets(sql_code, keywords_list)
+stopifnot (result[[1]] == expected_result[[1]] && result[[2]] == expected_result[[2]]) 
+```
+
+
+#Test for calculate_indentation
+```{r}
+
+sql_code <- "WHERE EXISTS(
+SELECT 1
+FROM [IDI_Sandpit].[DL-MAA20XX-YY].[ref_diagnosis] AS r
+)"
+
+expected_output <- "WHERE EXISTS(\n    SELECT 1\n    FROM [IDI_Sandpit].[DL-MAA20XX-YY].[ref_diagnosis] AS r\n)"
+
+result <- calculate_indentation(sql_code)
+stopifnot(result == expected_output)
+```
+
+#Another example with multi-layer indentation
+```{r}
+sql_code <- "WITH setup (\nSELECT a\n, b \nFROM table\n) \nSELECT c\n, d\n, e \nFROM (\nSELECT c\n, f \nFROM setup \nWHERE EXISTS (\nSELECT z \nFROM table\n) \nGROUP BY x\n, y\n) AS subq \nWHERE condition \nAND (\ncondition2 \nOR condition3\n)"
+
+expected_output <- "WITH setup (\n    SELECT a\n        , b\n    FROM table\n)\nSELECT c\n    , d\n    , e\nFROM (\n    SELECT c\n        , f\n    FROM setup\n    WHERE EXISTS (\n        SELECT z\n        FROM table\n    )\n    GROUP BY x\n        , y\n) AS subq\nWHERE condition\nAND (\n    condition2\n    OR condition3\n)"
+
+result <- calculate_indentation(sql_code)
+stopifnot(result == expected_output)
+```
+
+
+
+#Test for calculate_indentation
+```{r}
+input_string <- c("SELECT\n(user_id) FROM table \nWHERE column1 = value1")
+expected_result <- c("SELECT\n(user_id) FROM table\nWHERE column1 = value1")
+
+result <- calculate_indentation(input_string)
+stopifnot (result[[1]] == expected_result[[1]])
+```
+
+#Test for restore_whitespace
+```{r}
+# Test for standard_nocapv2
+sql_input <- "SELECT * FROM table WHERE id=1 AND value>=10 OR value<=5,order>100"
+expected_output_standardized <- "SELECT * FROM table WHERE id = 1 AND value >= 10 OR value <= 5, order > 100"
+
+result_standardized <- restore_whitespace(sql_input)
+
+stopifnot (result_standardized == expected_output_standardized) 
+```
+
+
+#Test for reassemble_special_patterns
+```{r}
+sql_text <- list("SELECT * FROM table WHERE DATA_COMPRESSION ON; {}{}y11{}{}; {}{}y2{}{}",
+                        "y11" = "\nCREATE NONCLUSTERED INDEX idx ON table (col1)", "y2" = "CASE WHEN col1 = 'A' THEN 1 ELSE 0 END")
+
+expected_output <- list("SELECT * FROM table WHERE DATA_COMPRESSION ON; \nCREATE NONCLUSTERED INDEX idx ON table (col1); CASE WHEN col1 = 'A' THEN 1 ELSE 0 END")
+
+result <- reassemble_special_patterns(sql_text)
+stopifnot(result[[1]] == expected_output[[1]])
+#stopifnot(result[[2]] == expected_output[[2]])
+```
+
+#Test for reassemble_functions
+```{r}
+
+sql_list <- list(
+  "SELECT<><>f1<><>,<><>f2<><> FROM table",
+  f1 = " ABS(a)",
+  f2 = " CONCAT(b, c)"
+)
+
+expected_output  <- list(
+  "SELECT ABS(a), CONCAT(b, c) FROM table"
+)
+
+result <- reassemble_functions(sql_list)
+
+stopifnot (result[[1]] == expected_output[[1]] ) 
+```
+
+#Test for reassemble_comments
+```{r}
+disassembled <- list(
+  "SELECT * FROM table WHERE id = <><>c1<><>",
+  c1 = "This is a comment for the first placeholder"
+)
+
+expected_output <- "SELECT * FROM table WHERE id = This is a comment for the first placeholder"
+
+result <- reassemble_comments(disassembled)
+
+stopifnot (result == expected_output) 
+```
+
+
+
+# Test for remove_double_newlines
+```{r}
+
+sql_code <- "SELECT * FROM table;\n\nINSERT INTO table VALUES (1,2);\n\n"
+expected_output <- "SELECT * FROM table;\nINSERT INTO table VALUES (1,2);\n"
+result <- remove_double_newlines(sql_code)
+stopifnot(result == expected_output)
+```
+
+# Test for restore_blank_lines
+```{r}
+
+sql_code <- "SELECT * FROM table;<><>b<><>INSERT INTO table VALUES (1,2);<><>b<><>"
+expected_output <- "SELECT * FROM table;\nINSERT INTO table VALUES (1,2);\n"
+
+result <- restore_blank_lines(sql_code)
+stopifnot(result == expected_output)
+```
+
+# Test for standardize_sql
+```{r}
+sql_input <- " SELECT   *  FROM   table WHERE id  =  1  AND value   >=   10 OR value <=   5 ; "
+expected_output_standardized <- " select * from table where id=1 and value>=10 or value<=5;"
+
+result_standardized <- standardize_sql(sql_input)
+
+stopifnot (result_standardized == expected_output_standardized) 
+```
+
+# Test for drop_table_if_exists
+```{r}
+sql_code <- "DROP TABLE my_table; DROP TABLE IF EXISTS other_table;"
+result <- drop_table_if_exists(sql_code)
+expected_output <-"DROP TABLE IF EXISTS my_table; DROP TABLE IF EXISTS other_table;"
+stopifnot(result == expected_output)
+```
+
+
+
+
+
+
