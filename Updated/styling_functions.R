@@ -45,7 +45,9 @@ comment_disassemble = function(sql_code) {
     placeholder = sprintf("<><>c%d<><>", index)
     
     sql_content[[placeholder]] = matches[index]
-    sql_code = stringr::str_replace(sql_code, stringr::fixed(matches[index]), placeholder)
+    sql_code = suppressWarnings(
+      stringr::str_replace(sql_code, stringr::fixed(matches[index]), placeholder)
+    )
   }
   
   # Return the result
@@ -76,7 +78,9 @@ function_disassemble = function(sql_content) {
     
     # Store the function in the list with a key like f1, f2, etc.
     sql_content[[placeholder]] = bracketed_content
-    sql_code = stringr::str_replace(sql_code, stringr::fixed(bracketed_content), placeholder)
+    sql_code = suppressWarnings(
+      stringr::str_replace(sql_code, stringr::fixed(bracketed_content), placeholder)
+    )
   }
   
   # Step 2: Find and replace balanced SQL functions with placeholders
@@ -87,7 +91,9 @@ function_disassemble = function(sql_content) {
     placeholder = sprintf("<><>f%d<><>", index + index2)
     
     sql_content[[placeholder]] = balanced_matches[index2]
-    sql_code = stringr::str_replace(sql_code, stringr::fixed(balanced_matches[index2]), placeholder)
+    sql_code = suppressWarnings(
+      stringr::str_replace(sql_code, stringr::fixed(balanced_matches[index2]), placeholder)
+    )
   }
   
   # Return the result
@@ -122,14 +128,17 @@ special_patterns_disassemble = function(sql_content){
     "(?i)\\bCREATE (?:CLUSTERED|NONCLUSTERED)? ?INDEX.*?\\)",
     # 3. Handle CASE ... WHEN ... END: Capture entire case block (case-insensitive)
     "(?i)CASE\\s+WHEN[\\s\\S]*?END",
-    # 4. Anything between single quotes --> text strings
-    "'(?:''|[^'])*'"
+    # 4. Handle anything between single quotes --> text strings
+    "'(?:''|[^'])*'",
+    # 5. Handle BETWEEN pattern
+    " BETWEEN .* AND "
   )
   
   # add_newline
   add_newline = c(
     TRUE,
     TRUE,
+    FALSE,
     FALSE,
     FALSE
   )
@@ -144,7 +153,9 @@ special_patterns_disassemble = function(sql_content){
       index = index + 1
       placeholder = sprintf("<><>y%d<><>", index)
       sql_content[[placeholder]] = paste0(match, ifelse(add_newline[ii], "\n", ""))
-      sql_code = stringr::str_replace(sql_code, stringr::fixed(match), placeholder)
+      sql_code = suppressWarnings(
+        stringr::str_replace(sql_code, stringr::fixed(match), placeholder)
+      )
     }
   }
   
@@ -271,10 +282,13 @@ capitalize_known_titles = function(sql_code) {
   )
   
   # Apply the replacement function to the input SQL code
-  modified_sql = stringr::str_replace_all(text, title_replacements)
+  for(ii in seq_along(title_replacements)){
+    this_tr = title_replacements[ii]
+    sql_code = stringr::str_replace_all(sql_code, names(this_tr), this_tr)
+  }
   
   # Return the modified SQL code
-  return(modified_sql)
+  return(sql_code)
 }
 
 remove_whitespace = function(sql_content) {
@@ -507,13 +521,16 @@ style_files_interface = function() {
   }
     
   ## output directory ----
-  output_directory = rstudioapi::selectDirectory(caption = "Select Directory to Save Styled and Unstyled Files")
+  output_directory = rstudioapi::selectDirectory(
+    caption = "Select Directory to Save Styled and Unstyled Files",
+    path = dirname(input_path)
+    )
   if(is.null(output_directory)){
     stop("No directory selected. Exiting.")
   }
   
-  styled_folder = file.path(base_folder, "styled")
-  unstyled_folder = file.path(base_folder, "unstyled")
+  styled_folder = file.path(output_directory, "styled")
+  unstyled_folder = file.path(output_directory, "unstyled")
   
   if (!dir.exists(styled_folder)){ dir.create(styled_folder) }
   if (!dir.exists(unstyled_folder)){ dir.create(unstyled_folder) }
@@ -539,58 +556,52 @@ style_files_interface = function() {
     
     # copy and style file
     styled_file_path = file.path(styled_folder, paste0("styled_", basename(ff)))
-    process_sql_files(input_file, unstyled_file_path, styled_file_path)
+    process_sql_files(ff, styled_file_path)
   }
   
   ## conclude ----
   cat("File styling complete\n")
-  cat("Unstyled files saved at:", subfolders$unstyled_folder, "\n")
-  cat("Styled files saved at:", subfolders$styled_folder, "\n")
+  cat("Unstyled files saved at:", unstyled_folder, "\n")
+  cat("Styled files saved at:", styled_folder, "\n")
 }
 
-process_sql_files = function(filenames, project_folders, outputpath){
-  stopifnot(is.character(project_folders), length(project_folders) == 1)
-  stopifnot(is.character(outputpath), length(outputpath) == 1)
+process_sql_files = function(input_file, output_file){
+  stopifnot(is.character(input_file), length(input_file) == 1)
+  stopifnot(is.character(output_file), length(output_file) == 1)
   
-  # Iterate over each file and its corresponding project folder
-  for (i in seq_along(filenames)) {
-    # Construct the full file path by combining the project and file name
-    input_file = file.path(project_folders[i], filenames[i])
-    
-    # exists
-    if(!grepl("\\.sql$|\\.txt$", input_file)){
-      msg = sprintf("Invalid file type: %s. Only .sql and .txt files are allowed.", filenames[ii])
-      warning(msg)
-      next
-    }
-    stopifnot(file.exists(input_file))
-    
-    # Read the file content
-    sql_content = readLines(input_file, warn = FALSE)
-    stopifnot(is.character(sql_content))
-    sql_content = paste(sql_content, collapse = "\n")
-    
-    # Run the provided script for processing
-    sql_content = blankline_disassemble(sql_content)
-    sql_content = comment_disassemble(sql_content)
-    sql_content$code = capitalize_sql_keywords(sql_content)
-    sql_content = function_disassemble(sql_content)
-    sql_content = special_patterns_disassemble(sql_content)
-    sql_content = remove_whitespace(sql_content)
-    sql_content = insert_newlines_before_keywords_and_brackets(sql_content)
-    
-    sql_content$code = calculate_indentation(sql_content$code)
-    
-    sql_content$code = restore_whitespace(sql_content$code)
-    sql_content = reassemble_special_patterns(sql_content)
-    sql_content$code = reassemble_functions(sql_content)
-    
-    sql_content = reassemble_comments(sql_content)
-    sql_content = remove_double_newlines(sql_content)
-    sql_content = restore_blank_lines(sql_content)
-    sql_content = capitalize_known_titles(sql_content)
-    sql_content = drop_table_if_exists(sql_content)
-    
-    writeLines(sql_string, outputpath)
-  } # end for loop
+  # exists
+  if(!grepl("\\.sql$|\\.txt$", input_file)){
+    msg = sprintf("Invalid file type: '%s'. Only .sql and .txt files are allowed.", basename(input_file))
+    warning(msg)
+    return(NULL)
+  }
+  stopifnot(file.exists(input_file))
+  
+  # Read the file content
+  sql_content = readLines(input_file, warn = FALSE)
+  stopifnot(is.character(sql_content))
+  sql_content = paste(sql_content, collapse = "\n")
+  
+  # Run the provided script for processing
+  sql_content = blankline_disassemble(sql_content)
+  sql_content = comment_disassemble(sql_content)
+  sql_content$code = capitalize_sql_keywords(sql_content)
+  sql_content = function_disassemble(sql_content)
+  sql_content = special_patterns_disassemble(sql_content)
+  sql_content = remove_whitespace(sql_content)
+  sql_content = insert_newlines_before_keywords_and_brackets(sql_content)
+  
+  sql_content$code = calculate_indentation(sql_content$code)
+  
+  sql_content$code = restore_whitespace(sql_content$code)
+  sql_content = reassemble_special_patterns(sql_content)
+  sql_content$code = reassemble_functions(sql_content)
+  
+  sql_content = reassemble_comments(sql_content)
+  sql_content = remove_double_newlines(sql_content)
+  sql_content = restore_blank_lines(sql_content)
+  sql_content = capitalize_known_titles(sql_content)
+  sql_content = drop_table_if_exists(sql_content)
+  
+  writeLines(sql_content, output_file)
 }
